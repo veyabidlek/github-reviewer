@@ -6,11 +6,19 @@ import dynamic from "next/dynamic";
 import { tomorrow } from "react-syntax-highlighter/dist/esm/styles/hljs";
 import { FiGithub, FiCode, FiEye, FiEyeOff, FiStar } from "react-icons/fi";
 import { generateResponse } from "./openai";
-import "dotenv/config";
 
-const SyntaxHighlighter = dynamic(() => import("react-syntax-highlighter"), {
-  ssr: false,
-});
+const SyntaxHighlighter = dynamic(
+  () => import("react-syntax-highlighter").then((mod) => mod.default),
+  {
+    ssr: false,
+    loading: () => <p>Loading...</p>,
+  }
+);
+
+interface FileContent {
+  path: string;
+  content: string;
+}
 
 interface FeedbackResponse {
   rating: number;
@@ -21,7 +29,7 @@ interface FeedbackResponse {
 
 export default function Home() {
   const [url, setUrl] = useState("");
-  const [files, setFiles] = useState([]);
+  const [files, setFiles] = useState<FileContent[]>([]);
   const [selectedFile, setSelectedFile] = useState(0);
   const [isCodeVisible, setIsCodeVisible] = useState(true);
   const { fetchDirectoryContents, loading, error } =
@@ -34,7 +42,7 @@ export default function Home() {
     setIsAnalyzing(true);
     setFeedback(null);
     try {
-      const data = await fetchDirectoryContents(url);
+      const data: FileContent[] = await fetchDirectoryContents(url);
       let code = "";
       for (let i = 0; i < data.length; i++) {
         code += `${data[i].path}: \n ${data[i].content}\n\n`;
@@ -126,7 +134,7 @@ export default function Home() {
               {isCodeVisible && (
                 <div className="w-1/2 p-6 border-r border-gray-700">
                   <div className="flex mb-4 overflow-x-auto">
-                    {files.map((file, index) => (
+                    {files.map((file: FileContent, index: number) => (
                       <button
                         key={index}
                         onClick={() => setSelectedFile(index)}
