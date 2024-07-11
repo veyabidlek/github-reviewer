@@ -4,11 +4,20 @@ import { useState } from "react";
 import { useFetchDirectoryContents } from "./files";
 import dynamic from "next/dynamic";
 import { tomorrow } from "react-syntax-highlighter/dist/esm/styles/hljs";
-import { FiGithub, FiCode, FiEye, FiEyeOff } from "react-icons/fi";
+import { FiGithub, FiCode, FiEye, FiEyeOff, FiStar } from "react-icons/fi";
+import { generateResponse } from "./openai";
+import "dotenv/config";
 
 const SyntaxHighlighter = dynamic(() => import("react-syntax-highlighter"), {
   ssr: false,
 });
+
+interface FeedbackResponse {
+  rating: number;
+  pros: string;
+  cons: string;
+  recommendation: string;
+}
 
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -17,14 +26,26 @@ export default function Home() {
   const [isCodeVisible, setIsCodeVisible] = useState(true);
   const { fetchDirectoryContents, loading, error } =
     useFetchDirectoryContents();
+  const [feedback, setFeedback] = useState<FeedbackResponse | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsAnalyzing(true);
+    setFeedback(null);
     try {
       const data = await fetchDirectoryContents(url);
+      let code = "";
+      for (let i = 0; i < data.length; i++) {
+        code += `${data[i].path}: \n ${data[i].content}\n\n`;
+      }
+      const res = await generateResponse(code);
+      setFeedback(res);
       setFiles(data);
     } catch (err) {
       console.error("Error fetching repository files:", err);
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -67,6 +88,11 @@ export default function Home() {
         </form>
 
         {loading && (
+          <p className="text-center text-2xl animate-pulse">
+            Fetching repository contents...
+          </p>
+        )}
+        {isAnalyzing && (
           <p className="text-center text-2xl animate-pulse">
             Analyzing repository...
           </p>
@@ -127,13 +153,52 @@ export default function Home() {
                 </div>
               )}
               <div className={`${isCodeVisible ? "w-1/2" : "w-full"} p-6`}>
-                <h3 className="text-xl font-semibold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400">
+                <h3 className="text-2xl font-semibold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400">
                   Code Analytics and Recommendations
                 </h3>
-                <p className="text-gray-300">
-                  This section will contain code analytics and recommendations
-                  for the selected file.
-                </p>
+                {feedback ? (
+                  <div className="space-y-6">
+                    <div className="flex items-center">
+                      <div className="text-3xl font-bold mr-4">
+                        {feedback.rating.toFixed(1)}/10
+                      </div>
+                      <div className="flex">
+                        {[...Array(10)].map((_, i) => (
+                          <FiStar
+                            key={i}
+                            className={`w-6 h-6 ${
+                              i < Math.round(feedback.rating)
+                                ? "text-yellow-400 fill-current"
+                                : "text-gray-400"
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <div className="bg-gray-700 rounded-lg p-4">
+                      <h4 className="text-lg font-semibold mb-2 text-green-400">
+                        Pros
+                      </h4>
+                      <p className="text-gray-300">{feedback.pros}</p>
+                    </div>
+                    <div className="bg-gray-700 rounded-lg p-4">
+                      <h4 className="text-lg font-semibold mb-2 text-red-400">
+                        Cons
+                      </h4>
+                      <p className="text-gray-300">{feedback.cons}</p>
+                    </div>
+                    <div className="bg-gray-700 rounded-lg p-4">
+                      <h4 className="text-lg font-semibold mb-2 text-blue-400">
+                        Recommendations
+                      </h4>
+                      <p className="text-gray-300">{feedback.recommendation}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-gray-300">
+                    No analysis available. Please analyze a repository first.
+                  </p>
+                )}
               </div>
             </div>
           </div>

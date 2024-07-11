@@ -3,14 +3,70 @@ import express from "express";
 import axios from "axios";
 import dotenv from "dotenv";
 import cors from "cors";
+import OpenAI from "openai";
 dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8000;
 app.use(cors());
+app.use(express.json());
 const githubToken = process.env.GITHUB_TOKEN;
-let storedData: any[] = []; // Variable to store the fetched data
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+interface FeedbackResponse {
+  rating: number;
+  pros: string;
+  cons: string;
+  recommendation: string;
+}
+
+async function generateResponse(content: string): Promise<FeedbackResponse> {
+  try {
+    const completion = await openai.chat.completions.create({
+      messages: [
+        {
+          role: "system",
+          content: `You are a helpful assistant designed to output JSON. Analyze the following code and give rating out of 10, give recommendation and general feedback. The answer should always be in the following format
+          {
+          "rating": 7,
+          "pros": "Your code has the following pros: ...",
+          "cons": "Your code has the following cons: ...",
+          "recommendation": "recommendation*"
+          }`,
+        },
+        { role: "user", content: `${content}` },
+      ],
+      model: "gpt-4-0125-preview",
+      response_format: { type: "json_object" },
+    });
+
+    const data = completion.choices[0].message.content;
+    if (data) {
+      const parsedData = JSON.parse(data) as FeedbackResponse;
+      return parsedData;
+    } else {
+      throw new Error("No content in the response");
+    }
+  } catch (error) {
+    console.error("Error generating response:", error);
+    throw error;
+  }
+}
+
+// Add this new endpoint
+app.post("/api/analyze", async (req, res) => {
+  const { content } = req.body;
+  try {
+    const analysis = await generateResponse(content);
+    res.json(analysis);
+  } catch (error: any) {
+    res.status(500).json({
+      message: "Error analyzing code",
+      error: error.message,
+    });
+  }
+});
+
+// let storedData: any[] = []; // Variable to store the fetched data
 const ignoreFiles = new Set([
   ".gitignore",
   "package.json",
@@ -123,8 +179,7 @@ app.post("/api/repos/files", async (req, res) => {
     const { owner, repo } = parseGitHubUrl(url);
     const files = await fetchDirectoryContents(owner, repo);
     const flattenedFiles = flattenFileStructure(files);
-    console.log("Flattened files:", JSON.stringify(flattenedFiles, null, 2));
-    storedData = flattenedFiles; // Store the data in the variable
+
     res.json(flattenedFiles);
   } catch (error: any) {
     res.status(500).json({
@@ -138,12 +193,12 @@ app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 
   // Example fetch and store on server start
-  const exampleUrl = "https://github.com/veyabidlek/github-reviewer";
-  const { owner, repo } = parseGitHubUrl(exampleUrl);
-  fetchDirectoryContents(owner, repo)
-    .then((data) => {
-      storedData = data;
-      console.log(JSON.stringify(storedData, null, 2));
-    })
-    .catch((error) => console.error(`Error: ${error.message}`));
+  // const exampleUrl = "https://github.com/veyabidlek/github-reviewer";
+  // const { owner, repo } = parseGitHubUrl(exampleUrl);
+  // fetchDirectoryContents(owner, repo)
+  //   .then((data) => {
+  //     storedData = data;
+  //     console.log(JSON.stringify(storedData, null, 2));
+  //   })
+  //   .catch((error) => console.error(`Error: ${error.message}`));
 });

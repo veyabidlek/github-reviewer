@@ -14,9 +14,10 @@ export const useFetchDirectoryContents = () => {
         "http://localhost:8000/api/repos/files",
         { url }
       );
+
       setLoading(false);
       return response.data;
-    } catch (err) {
+    } catch (err: any) {
       setLoading(false);
       setError(err.message);
       throw err;
