@@ -2,7 +2,6 @@
 import express from "express";
 import axios from "axios";
 import dotenv from "dotenv";
-import { flattenDeep } from "lodash";
 
 dotenv.config();
 
@@ -16,6 +15,9 @@ const ignoreFiles = new Set([
   ".gitignore",
   "package.json",
   "package-lock.json",
+  "tsconfig.json",
+  "eslint.config.mjs",
+  "favicon.ico",
 ]);
 
 const parseGitHubUrl = (url: string) => {
@@ -36,15 +38,16 @@ const fetchFileContent = async (owner: string, repo: string, path: string) => {
         },
       }
     );
-    if (response.data.type === "file") {
-      return {
-        path,
-        content: Buffer.from(response.data.content, "base64").toString("utf-8"),
-      };
+    if (response.data.type === "file" && !ignoreFiles.has(response.data.name)) {
+      const content = Buffer.from(response.data.content, "base64").toString(
+        "utf-8"
+      );
+      return { path, content };
     }
     return null;
   } catch (error: any) {
-    throw new Error(`Error fetching file content: ${error.message}`);
+    console.error(`Error fetching file content for ${path}: ${error.message}`);
+    throw error;
   }
 };
 
@@ -65,7 +68,12 @@ const fetchDirectoryContents = async (
     const files = await Promise.all(
       response.data.map(async (item: any) => {
         if (item.type === "dir") {
-          return fetchDirectoryContents(owner, repo, item.path);
+          const subDirContents = await fetchDirectoryContents(
+            owner,
+            repo,
+            item.path
+          );
+          return { [item.path]: subDirContents };
         } else if (item.type === "file") {
           return fetchFileContent(owner, repo, item.path);
         }
@@ -74,8 +82,26 @@ const fetchDirectoryContents = async (
     );
     return files.filter((file: any) => file !== null);
   } catch (error: any) {
-    throw new Error(`Error fetching directory contents: ${error.message}`);
+    console.error(
+      `Error fetching directory contents for ${path}: ${error.message}`
+    );
+    throw error;
   }
+};
+
+const flattenFileStructure = (files: any[]): any[] => {
+  return files.reduce((acc: any[], file: any) => {
+    if (file && typeof file === "object") {
+      if (file.path && file.content) {
+        acc.push(file);
+      } else {
+        Object.values(file).forEach((subFile: any) => {
+          acc.push(...flattenFileStructure(subFile));
+        });
+      }
+    }
+    return acc;
+  }, []);
 };
 
 app.use(express.json());
@@ -89,7 +115,8 @@ app.post("/api/repos/files", async (req, res) => {
     }
     const { owner, repo } = parseGitHubUrl(url);
     const files = await fetchDirectoryContents(owner, repo);
-    const flattenedFiles = flattenDeep(files);
+    const flattenedFiles = flattenFileStructure(files);
+    console.log("Flattened files:", JSON.stringify(flattenedFiles, null, 2));
     storedData = flattenedFiles; // Store the data in the variable
     res.json(flattenedFiles);
   } catch (error: any) {
@@ -109,7 +136,7 @@ app.listen(PORT, () => {
   fetchDirectoryContents(owner, repo)
     .then((data) => {
       storedData = data;
-      console.log(data);
+      console.log(JSON.stringify(storedData, null, 2));
     })
     .catch((error) => console.error(`Error: ${error.message}`));
 });
