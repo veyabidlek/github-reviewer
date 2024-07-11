@@ -2,12 +2,12 @@
 import express from "express";
 import axios from "axios";
 import dotenv from "dotenv";
-
+import cors from "cors";
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-
+app.use(cors());
 const githubToken = process.env.GITHUB_TOKEN;
 let storedData: any[] = []; // Variable to store the fetched data
 
@@ -18,6 +18,13 @@ const ignoreFiles = new Set([
   "tsconfig.json",
   "eslint.config.mjs",
   "favicon.ico",
+  ".DS_Store",
+  ".eslintrc.json",
+  "next.config.mjs",
+  "postcss.config.mjs",
+  "vercel.svg",
+  "next.svg",
+  "tailwind.config.ts",
 ]);
 
 const parseGitHubUrl = (url: string) => {
