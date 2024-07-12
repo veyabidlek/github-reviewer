@@ -4,13 +4,18 @@ import axios from "axios";
 import dotenv from "dotenv";
 import cors from "cors";
 import OpenAI from "openai";
+import FormData from "form-data";
+
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 8000;
 app.use(cors());
 app.use(express.json());
+
 const githubToken = process.env.GITHUB_TOKEN;
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const copyleaksApiKey = process.env.COPYLEAKS_API_KEY;
+const copyleaksEmail = process.env.COPYLEAKS_EMAIL;
 
 interface FeedbackResponse {
   rating: number;
@@ -52,7 +57,6 @@ async function generateResponse(content: string): Promise<FeedbackResponse> {
   }
 }
 
-// Add this new endpoint
 app.post("/api/analyze", async (req, res) => {
   const { content } = req.body;
   try {
@@ -66,7 +70,6 @@ app.post("/api/analyze", async (req, res) => {
   }
 });
 
-// let storedData: any[] = []; // Variable to store the fetched data
 const ignoreFiles = new Set([
   ".gitignore",
   "package.json",
@@ -167,8 +170,6 @@ const flattenFileStructure = (files: any[]): any[] => {
   }, []);
 };
 
-app.use(express.json());
-
 app.post("/api/repos/files", async (req, res) => {
   const { url } = req.body;
 
@@ -189,16 +190,76 @@ app.post("/api/repos/files", async (req, res) => {
   }
 });
 
+async function getCopyleaksToken() {
+  try {
+    const response = await axios.post(
+      "https://id.copyleaks.com/v3/account/login/api",
+      {
+        email: copyleaksEmail,
+        key: copyleaksApiKey,
+      }
+    );
+    return response.data.access_token;
+  } catch (error) {
+    console.error("Error getting Copyleaks token:", error);
+    throw error;
+  }
+}
+
+async function checkPlagiarism(content: string) {
+  try {
+    const token = await getCopyleaksToken();
+    const scanId = `scan_${Date.now()}`;
+
+    const formData = new FormData();
+    formData.append("file", Buffer.from(content), {
+      filename: "content.txt",
+      contentType: "text/plain",
+    });
+
+    const response = await axios.put(
+      `https://api.copyleaks.com/v3/scans/submit/file/${scanId}`,
+      formData,
+      {
+        headers: {
+          ...formData.getHeaders(),
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    // Start the scan
+    await axios.patch(
+      "https://api.copyleaks.com/v3/scans/start",
+      { scanId: [scanId] },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    return { scanId };
+  } catch (error) {
+    console.error("Error checking plagiarism:", error);
+    throw error;
+  }
+}
+
+app.post("/api/check-plagiarism", async (req, res) => {
+  const { content } = req.body;
+  try {
+    const result = await checkPlagiarism(content);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({
+      message: "Error checking plagiarism",
+      error: error.message,
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
-
-  // Example fetch and store on server start
-  // const exampleUrl = "https://github.com/veyabidlek/github-reviewer";
-  // const { owner, repo } = parseGitHubUrl(exampleUrl);
-  // fetchDirectoryContents(owner, repo)
-  //   .then((data) => {
-  //     storedData = data;
-  //     console.log(JSON.stringify(storedData, null, 2));
-  //   })
-  //   .catch((error) => console.error(`Error: ${error.message}`));
 });

@@ -4,7 +4,14 @@ import { useState } from "react";
 import { useFetchDirectoryContents } from "./files";
 import dynamic from "next/dynamic";
 import { tomorrow } from "react-syntax-highlighter/dist/esm/styles/hljs";
-import { FiGithub, FiCode, FiEye, FiEyeOff, FiStar } from "react-icons/fi";
+import {
+  FiGithub,
+  FiCode,
+  FiEye,
+  FiEyeOff,
+  FiStar,
+  FiSearch,
+} from "react-icons/fi";
 import { generateResponse } from "./openai";
 
 const SyntaxHighlighter = dynamic(
@@ -27,6 +34,10 @@ interface FeedbackResponse {
   recommendation: string;
 }
 
+interface PlagiarismResponse {
+  scanId: string;
+}
+
 export default function Home() {
   const [url, setUrl] = useState("");
   const [files, setFiles] = useState<FileContent[]>([]);
@@ -36,11 +47,15 @@ export default function Home() {
     useFetchDirectoryContents();
   const [feedback, setFeedback] = useState<FeedbackResponse | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [plagiarismResult, setPlagiarismResult] =
+    useState<PlagiarismResponse | null>(null);
+  const [isCheckingPlagiarism, setIsCheckingPlagiarism] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsAnalyzing(true);
     setFeedback(null);
+    setPlagiarismResult(null);
     try {
       const data: FileContent[] = await fetchDirectoryContents(url);
       let code = "";
@@ -61,6 +76,24 @@ export default function Home() {
     setIsCodeVisible(!isCodeVisible);
   };
 
+  const handlePlagiarismCheck = async () => {
+    setIsCheckingPlagiarism(true);
+    try {
+      const response = await fetch("/api/check-plagiarism", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ content: files[selectedFile].content }),
+      });
+      const result = await response.json();
+      setPlagiarismResult(result);
+    } catch (err) {
+      console.error("Error checking plagiarism:", err);
+    } finally {
+      setIsCheckingPlagiarism(false);
+    }
+  };
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-indigo-900 text-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
@@ -115,20 +148,30 @@ export default function Home() {
               <h2 className="text-2xl font-semibold text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400">
                 Repository Analysis
               </h2>
-              <button
-                onClick={toggleCodeVisibility}
-                className="flex items-center px-4 py-2 bg-gray-700 rounded-full hover:bg-gray-600 transition duration-300"
-              >
-                {isCodeVisible ? (
-                  <>
-                    <FiEyeOff className="mr-2" /> Hide Code
-                  </>
-                ) : (
-                  <>
-                    <FiEye className="mr-2" /> Show Code
-                  </>
-                )}
-              </button>
+              <div className="flex space-x-4">
+                <button
+                  onClick={toggleCodeVisibility}
+                  className="flex items-center px-4 py-2 bg-gray-700 rounded-full hover:bg-gray-600 transition duration-300"
+                >
+                  {isCodeVisible ? (
+                    <>
+                      <FiEyeOff className="mr-2" /> Hide Code
+                    </>
+                  ) : (
+                    <>
+                      <FiEye className="mr-2" /> Show Code
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={handlePlagiarismCheck}
+                  disabled={isCheckingPlagiarism}
+                  className="flex items-center px-4 py-2 bg-blue-600 rounded-full hover:bg-blue-700 transition duration-300"
+                >
+                  <FiSearch className="mr-2" />
+                  {isCheckingPlagiarism ? "Checking..." : "Check Plagiarism"}
+                </button>
+              </div>
             </div>
             <div className="flex">
               {isCodeVisible && (
